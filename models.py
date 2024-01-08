@@ -1,4 +1,5 @@
 from flask_sqlalchemy import SQLAlchemy
+
 from werkzeug.security import generate_password_hash, check_password_hash
 db = SQLAlchemy()
 
@@ -10,6 +11,11 @@ class User(db.Model):
     password = db.Column(db.String(120), nullable=False)
     todos = db.relationship('Todo', backref='user', lazy=True, cascade="all, delete-orphan")
 
+    def __init__(self, username, email, password):
+      self.username = username
+      self.email = email
+      self.set_password(password)
+
     def toDict(self):
       return {
         "id": self.id,
@@ -18,6 +24,49 @@ class User(db.Model):
         "num_todos": self.get_num_todos(),
         "num_done": self.get_done_todos()
       }
+
+    def get_json(self):
+      return {
+        "id": self.id,
+        "username": self.username,
+        "email": self.email,
+        "password": self.password
+      }
+
+    def add_todo(self, text):
+      new_todo = Todo(text=text)
+      new_todo.user_id = self.id
+      self.todos.append(new_todo)
+      db.session.add(self)
+      db.session.commit()
+      return new_todo
+
+  
+    def delete_todo(self, todo_id):
+      todo = Todo.query.filter_by(id=todo_id, user_id=self.id).first()
+      if todo:
+        db.session.delete(todo)
+        db.session.commit()
+        return True
+      return None
+
+  
+    def update_todo(self, todo_id, text):
+      todo = Todo.query.filter_by(id=todo_id, user_id=self.id).first()
+      if todo:
+        todo.text= text
+        db.session.add(todo)
+        db.session.commit()
+        return True
+      return None
+
+  
+    def toggle_todo(self, todo_id):
+      todo = Todo.query.filter_by(id=todo_id, user_id=self.id).first()
+      if todo:
+        todo.toggle()
+        return True
+      return None
     
     #hashes the password parameter and stores it in the object
     def set_password(self, password):
@@ -49,6 +98,9 @@ class Todo(db.Model):
   userid = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False) #set userid as a foreign key to user.id 
   done = db.Column(db.Boolean, nullable=False)
 
+  def __init__(self, text):
+      self.text = text
+
   def toDict(self):
    return {
      'id': self.id,
@@ -56,3 +108,16 @@ class Todo(db.Model):
      'userid': self.userid,
      'done': self.done
    }
+
+  def get_json(self):
+    return {
+      "id": self.id,
+      "text": self.text,
+      "done": self.done,
+      "categories": self.cat_list()
+    }
+
+  def toggle(self):
+    self.done = not self.done
+    db.session.add(self)
+    db.session.commit()

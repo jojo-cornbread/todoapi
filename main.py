@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory, render_template, redirect, url_for
 from flask_cors import CORS
 from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_required, JWTManager
 from models import User, Todo, db
@@ -30,37 +30,72 @@ db.create_all()
 def get_user(username):
     return User.query.filter_by(username=username).first()
 
-@app.route('/', methods=['GET'])
-def index():
- return app.send_static_file('index.html')
+def user_login( username, password):
+  user = User.query.filter_by(username=username).first()
+  if user and user.check_password(password):
+    return create_access_token(identity=username)
+  return None
 
-@app.route("/login", methods=["POST"])
-def login():
-    data = request.get_json()
-    user = get_user(data['username'])
-    if user and user.check_password(data['password']):
-        access_token = create_access_token(identity=data['username'])
-        return jsonify(access_token=access_token)
-    return jsonify({"msg": "Bad username or password"}), 401
+# @app.route('/', methods=['GET'])
+# def index():
+#  return app.send_static_file('index.html')
+@app.route('/', methods=['GET'])
+@app.route('/login', methods=['GET'])
+def login_page():
+  return render_template('login.html') 
+
+# @app.route("/login", methods=["POST"])
+# def login_action():
+#     data = request.form
+#     user = get_user(data['username'])
+#     if user and user.check_password(data['password']):
+#         access_token = create_access_token(identity=data['username'])
+#         return jsonify(access_token=access_token)
+#     return jsonify({"msg": "Bad username or password"}), 401
+
+@app.route('/login', methods=['POST'])
+def user_login_view():
+  data = request.json
+  # data = jsonify(data) ------- turn this into json data???
+  token = user_login(data['username'], data['password'])
+  if not token:
+    return jsonify(message='bad username or password given'), 401
+  return jsonify(access_token=token)
+
+
+@app.route('/signup', methods=['GET'])
+def signup_page():
+  return render_template('signup.html')
 
 @app.route('/signup', methods=['POST'])
-def signup():
-  userdata = request.get_json() # get userdata
-  newuser = User(username=userdata['username'], email=userdata['email']) # create user object
-  newuser.set_password(userdata['password']) # set password
-  try:
-    db.session.add(newuser)
-    db.session.commit() # save user
-  except IntegrityError: # attempted to insert a duplicate user
-    db.session.rollback()
-    return jsonify({ "error" : "username or email already exists"}) # error message
-  return jsonify({ "message" : "user created"}) # success
+def signup_user_view():
+  data = request.form
+  new_user = User(data['username'], data['email'], data['password'])
 
-@app.route('/identify')
+
+  user = User.query.filter_by(username=data['username']).first()
+  
+  if user:
+    return jsonify(message='username already taken!'), 409
+  
+  db.session.add(new_user)
+  db.session.commit()
+  return jsonify(message=f'User {new_user.id} - {new_user.username} created!'), 201
+
+@app.route('/app', methods=['GET'])
+# @jwt_required()
+def todos_page():
+  return render_template('todos.html')
+
+@app.route('/identify', methods=['GET'])
 @jwt_required()
-def protected():
-    user = get_user(get_jwt_identity())
-    return jsonify(user.toDict())
+def identify_view():
+  username = get_jwt_identity() # convert sent token to user name
+  #retrieve regular user with given username
+  user = User.query.filter_by(username=username).first()
+  if user:
+    return jsonify(user.get_json()) #jsonify user object
+
 
 @app.route('/users', methods=['GET'])
 def get_users():
